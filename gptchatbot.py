@@ -13,7 +13,7 @@ from src import model, sample, encoder
 import numpy as np
 import tensorflow as tf
 
-class GPT2Bot:
+class GPT2Bot(commands.Cog):
 
     def __init__(self, bot):
         logging.basicConfig(level=logging.INFO)
@@ -72,7 +72,8 @@ class GPT2Bot:
         logging.info('Shutting down GPT.')
         self.session.close()
 
-    @commands.command(pass_context=True, no_pm=True)
+    @commands.command()
+    @commands.guild_only()
     async def talk(self, ctx, *, message):
         logging.info('MSG: ' + message)
         context_tokens = self.enc.encode(message)
@@ -84,7 +85,8 @@ class GPT2Bot:
             logging.info('RESPONSE:' + resp_text)
             await ctx.send(resp_text)
 
-    @commands.command(pass_context=True, no_pm=True)
+    @commands.command()
+    @commands.guild_only()
     async def getconfiguration(self, ctx):
         logging.info('Current state.')
         await ctx.send('N Samples: ' + str(self.nsamples))
@@ -92,13 +94,15 @@ class GPT2Bot:
         await ctx.send('Temperature: ' + str(self.temperature))
         await ctx.send('Top K: ' + str(self.top_k))
 
-    @commands.command(pass_context=True, no_pm=True)
+    @commands.command()
+    @commands.guild_only()
     async def helpconfigure(self, ctx):
         logging.info('Help Invoked.')
         await ctx.send('Configure the bot session by `!configure <nsamples> <length> <temperature> <topk>`.')
         await ctx.send('Get current state by `!getconfiguration`.')
 
-    @commands.command(pass_context=True, no_pm=True)
+    @commands.command()
+    @commands.guild_only()
     async def configure(self, ctx, nsamples, length, temp, top_k):
         logging.info('Set configuration.')
         await ctx.trigger_typing()
@@ -112,7 +116,8 @@ class GPT2Bot:
 
         await ctx.send('Succesfully Set Configuration!')
 
-    @commands.command(pass_context=True, no_pm=True)
+    @commands.command()
+    @commands.guild_only()
     async def default(self, ctx):
         logging.info('Set configuration.')
         await ctx.trigger_typing()
@@ -128,5 +133,4 @@ class GPT2Bot:
     
         
 def setup(bot):
-    gptbot = GPT2Bot(bot)
-    bot.add_cog(gptbot)
+    bot.add_cog(GPT2Bot(bot))
