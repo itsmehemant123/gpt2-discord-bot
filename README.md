@@ -34,6 +34,5 @@ python gpt-chatbot-client.py
 
 ### Improvements
 
-- Batch the message sends into `1990` chars per batch.
 - Send typing indicator every 10 sec when generating text.
 - Enable finetuning.

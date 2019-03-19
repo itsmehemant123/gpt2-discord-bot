@@ -5,6 +5,7 @@ import sys
 import json
 import time
 import discord
+import threading
 from datetime import datetime, timedelta
 from discord.ext import commands
 from discord import utils
@@ -78,16 +79,26 @@ class GPT2Bot(commands.Cog):
         logging.info('MSG: ' + message)
         context_tokens = self.enc.encode(message)
         for _ in range(self.nsamples):
-            out = self.session.run(self.output, feed_dict={
-                self.context: [context_tokens for _ in range(1)]
-            })[:, len(context_tokens):]
-            resp_text = self.enc.decode(out[0])
-            logging.info('RESPONSE:' + resp_text)
-            await ctx.send(resp_text)
+            async with ctx.typing():
+                out = self.session.run(self.output, feed_dict={
+                    self.context: [context_tokens for _ in range(1)]
+                })[:, len(context_tokens):]
+            response = self.enc.decode(out[0])
+            logging.info('RESPONSE: ' + response)
+            logging.info('RESPONSE LEN: ' + str(len(response)))
+            
+            response_chunk = 0
+            chunk_size = 1990
+            if (len(response) > 2000):
+                while (len(response) > response_chunk):
+                    await ctx.send(response[response_chunk:response_chunk + chunk_size])
+                    response_chunk += chunk_size
+            else:
+                await ctx.send(response)
 
     @commands.command()
     @commands.guild_only()
-    async def getconfiguration(self, ctx):
+    async def getconfig(self, ctx):
         logging.info('Current state.')
         await ctx.send('N Samples: ' + str(self.nsamples))
         await ctx.send('Max Length: ' + str(self.length))
@@ -96,18 +107,18 @@ class GPT2Bot(commands.Cog):
 
     @commands.command()
     @commands.guild_only()
-    async def helpconfigure(self, ctx):
+    async def helpconfig(self, ctx):
         logging.info('Help Invoked.')
-        await ctx.send('Configure the bot session by `!configure <nsamples> <length> <temperature> <topk>`.')
-        await ctx.send('Get current state by `!getconfiguration`.')
+        await ctx.send('Configure the bot session by `!setconfig <nsamples> <length> <temperature> <topk>`.')
+        await ctx.send('Get current state by `!getconfig`.')
 
     @commands.command()
     @commands.guild_only()
-    async def configure(self, ctx, nsamples, length, temp, top_k):
+    async def setconfig(self, ctx, nsamples: int, length: int, temp: float, top_k: int):
         logging.info('Set configuration.')
         await ctx.trigger_typing()
         self.shutdown()
-        self.set_state(int(nsamples), int(length), int(temp), int(top_k))
+        self.set_state(int(nsamples), int(length), float(temp), int(top_k))
         await ctx.trigger_typing()
         self.preinit_model()
         self.session = tf.InteractiveSession(graph=tf.Graph())
@@ -115,6 +126,8 @@ class GPT2Bot(commands.Cog):
         self.init_model()
 
         await ctx.send('Succesfully Set Configuration!')
+        if (self.nsamples * self.length > 100):
+            await ctx.send('Configuration parameters are process intensive, responses may take long.')
 
     @commands.command()
     @commands.guild_only()
