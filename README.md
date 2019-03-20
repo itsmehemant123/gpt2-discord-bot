@@ -34,5 +34,4 @@ python gpt-chatbot-client.py
 
 ### Improvements
 
-- Send typing indicator every 10 sec when generating text.
 - Enable finetuning.

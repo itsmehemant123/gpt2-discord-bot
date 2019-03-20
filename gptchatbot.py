@@ -6,10 +6,11 @@ import json
 import time
 import discord
 import threading
+import logging
+import functools
 from datetime import datetime, timedelta
 from discord.ext import commands
 from discord import utils
-import logging
 from src import model, sample, encoder
 import numpy as np
 import tensorflow as tf
@@ -21,6 +22,7 @@ class GPT2Bot(commands.Cog):
         
         self.bot = bot
         self.reset_model()
+        self.is_inferencing = False
     
     def init_state(self):
         self.model_name='117M'
@@ -62,6 +64,7 @@ class GPT2Bot(commands.Cog):
         self.saver = tf.train.Saver()
         self.ckpt = tf.train.latest_checkpoint(os.path.join('models', self.model_name))
         self.saver.restore(self.session, self.ckpt)
+        self.is_inferencing = False
 
     def reset_model(self):
         self.init_state()
@@ -77,24 +80,38 @@ class GPT2Bot(commands.Cog):
     @commands.guild_only()
     async def talk(self, ctx, *, message):
         logging.info('MSG: ' + message)
+        if (self.is_inferencing):
+            await ctx.send('Currently talking to someone. Try again later.')
+            return
+        
+        self.is_inferencing = True
         context_tokens = self.enc.encode(message)
         for _ in range(self.nsamples):
             async with ctx.typing():
-                out = self.session.run(self.output, feed_dict={
+                start = time.time()
+                text_generator = functools.partial(self.generate_text, context_tokens)
+                out = await self.bot.loop.run_in_executor(None, text_generator)
+
+                response = self.enc.decode(out[0])
+                logging.info('RESPONSE GENERATED IN :' + str(round(time.time() - start, 2)) + ' seconds.')
+                logging.info('RESPONSE: ' + response)
+                logging.info('RESPONSE LEN: ' + str(len(response)))
+                
+                response_chunk = 0
+                chunk_size = 1990
+                if (len(response) > 2000):
+                    while (len(response) > response_chunk):
+                        await ctx.send(response[response_chunk:response_chunk + chunk_size])
+                        response_chunk += chunk_size
+                else:
+                    await ctx.send(response)
+
+        self.is_inferencing = False
+    
+    def generate_text(self, context_tokens):
+        return self.session.run(self.output, feed_dict={
                     self.context: [context_tokens for _ in range(1)]
                 })[:, len(context_tokens):]
-            response = self.enc.decode(out[0])
-            logging.info('RESPONSE: ' + response)
-            logging.info('RESPONSE LEN: ' + str(len(response)))
-            
-            response_chunk = 0
-            chunk_size = 1990
-            if (len(response) > 2000):
-                while (len(response) > response_chunk):
-                    await ctx.send(response[response_chunk:response_chunk + chunk_size])
-                    response_chunk += chunk_size
-            else:
-                await ctx.send(response)
 
     @commands.command()
     @commands.guild_only()
@@ -116,6 +133,10 @@ class GPT2Bot(commands.Cog):
     @commands.guild_only()
     async def setconfig(self, ctx, nsamples: int, length: int, temp: float, top_k: int):
         logging.info('Set configuration.')
+        if (self.is_inferencing):
+            await ctx.send('Currently talking to someone. Try again later.')
+            return
+
         await ctx.trigger_typing()
         self.shutdown()
         self.set_state(int(nsamples), int(length), float(temp), int(top_k))
@@ -127,12 +148,16 @@ class GPT2Bot(commands.Cog):
 
         await ctx.send('Succesfully Set Configuration!')
         if (self.nsamples * self.length > 100):
-            await ctx.send('Configuration parameters are process intensive, responses may take long.')
+            await ctx.send('The configuration parameters are process intensive, responses may take a while.')
 
     @commands.command()
     @commands.guild_only()
     async def default(self, ctx):
-        logging.info('Set configuration.')
+        logging.info('Setting to Default configuration.')
+        if (self.is_inferencing):
+            await ctx.send('Currently talking to someone. Try again later.')
+            return
+
         await ctx.trigger_typing()
         self.shutdown()
         self.init_state()
@@ -142,7 +167,7 @@ class GPT2Bot(commands.Cog):
         await ctx.trigger_typing()
         self.init_model()
 
-        await ctx.send('Succesfully Set Configuration!')
+        await ctx.send('Succesfully Set Default Configuration!')
     
         
 def setup(bot):
