@@ -12,7 +12,7 @@ pip install -r requirements.txt
 ```
 sh download_model.sh 117M
 ```
-_This should download the gpt-2 model_
+_This should download the gpt-2 model. `117M` is the smallest model, `345M` is a larger variant._
 
 
 - Create `auth.json`, and place it inside the `config` folder. Its content should be:
