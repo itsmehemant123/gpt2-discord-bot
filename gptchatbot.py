@@ -33,11 +33,12 @@ class GPT2Bot(commands.Cog):
         self.temperature=1
         self.top_k=0
     
-    def set_state(self, nsamples, length, temperature, top_k):
+    def set_state(self, nsamples, length, temperature, top_k, model_name = '117M',):
         self.nsamples = nsamples
         self.length = length
         self.temperature = temperature
         self.top_k
+        self.model_name = model_name
     
     def preinit_model(self):
         np.random.seed(self.seed)
@@ -121,17 +122,18 @@ class GPT2Bot(commands.Cog):
         await ctx.send('Max Length: ' + str(self.length))
         await ctx.send('Temperature: ' + str(self.temperature))
         await ctx.send('Top K: ' + str(self.top_k))
+        await ctx.send('Model: ' + str(self.model_name))
 
     @commands.command()
     @commands.guild_only()
     async def helpconfig(self, ctx):
         logging.info('Help Invoked.')
-        await ctx.send('Configure the bot session by `!setconfig <nsamples> <length> <temperature> <topk>`.')
+        await ctx.send('Configure the bot session by `!setconfig <nsamples> <length> <temperature> <topk> <model: 117M or 345M>`.')
         await ctx.send('Get current state by `!getconfig`.')
 
     @commands.command()
     @commands.guild_only()
-    async def setconfig(self, ctx, nsamples: int, length: int, temp: float, top_k: int):
+    async def setconfig(self, ctx, nsamples: int, length: int, temp: float, top_k: int, model_name: str):
         logging.info('Set configuration.')
         if (self.is_inferencing):
             await ctx.send('Currently talking to someone. Try again later.')
@@ -139,7 +141,7 @@ class GPT2Bot(commands.Cog):
 
         await ctx.trigger_typing()
         self.shutdown()
-        self.set_state(int(nsamples), int(length), float(temp), int(top_k))
+        self.set_state(int(nsamples), int(length), float(temp), int(top_k), model_name)
         await ctx.trigger_typing()
         self.preinit_model()
         self.session = tf.InteractiveSession(graph=tf.Graph())
