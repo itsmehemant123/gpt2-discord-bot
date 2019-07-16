@@ -83,7 +83,7 @@ class gpt2_server_sessions:
     def load_json(self, server_id):
         filename = os.path.join(self.conf_path,str(server_id)+".json")
         if os.path.isfile(filename):
-            self.server_configs = json.load(filename)
+            self.server_configs = json.load(open(filename,'r'))
         else:
             self.server_configs = self.default_config()
 
