@@ -8,6 +8,7 @@ import discord
 import threading
 import logging
 import functools
+from gpt2_server_sessions import gpt2_server_sessions
 from datetime import datetime, timedelta
 from discord.ext import commands
 from discord import utils
@@ -22,80 +23,52 @@ class GPT2Bot(commands.Cog):
         logging.basicConfig(level=logging.INFO)
         
         self.bot = bot
-        self.reset_model()
-        self.is_inferencing = False
+        self.not_ready_s = "Bot has not been initialized. Please type !init to initialize the bot."
+        #self.reset_model()
+        self.is_interfering = True
+        self.not_ready = True
         self.sizeLimit=500
-    
-    def init_state(self):
-        self.model_name='117M'
-        self.batch_size = 1
-        self.seed = 42069
-        self.nsamples=1
-        self.length=200
-        self.temperature=1
-        self.top_k=0
-    
-    def set_state(self, nsamples, length, temperature, top_k, model_name = '117M',):
-        self.nsamples = nsamples
-        self.length = length
-        self.temperature = temperature
-        self.top_k = top_k
-        self.model_name = model_name
-    
-    def preinit_model(self):
-        np.random.seed(self.seed)
-        tf.set_random_seed(self.seed)
-        self.enc = encoder.get_encoder(self.model_name)
-        self.hparams = model.default_hparams()
-        with open(os.path.join('models', self.model_name, 'hparams.json')) as f:
-            self.hparams.override_from_dict(json.load(f))
+        self.guildIdList = []
+        #guilds = bot.guilds
+        #for guild in guilds:
+        #    self.guildIdList.append(guild.id)
+        self.serverSessions = {}
+        #for serverid in self.guildIdList:
+            #self.serverSessions[serverid] = gpt2_server_sessions(serverid)
+        self.is_interfering = False
 
-        if self.length is None:
-            self.length = self.hparams.n_ctx // 2
-        elif self.length > self.hparams.n_ctx:
-            logging.error("Can't get samples longer than window size: %s" % self.hparams.n_ctx)
-    
-    def init_model(self):
-        self.context = tf.placeholder(tf.int32, [1, None])
-        self.output = sample.sample_sequence(
-            hparams=self.hparams, length=self.length,
-            context=self.context,
-            batch_size=self.batch_size,
-            temperature=self.temperature, top_k=self.top_k
-        )
-
-        self.saver = tf.train.Saver()
-        self.ckpt = tf.train.latest_checkpoint(os.path.join('models', self.model_name))
-        self.saver.restore(self.session, self.ckpt)
-        self.is_inferencing = False
-
-    def reset_model(self):
-        self.init_state()
-        self.preinit_model()
-        self.session = tf.InteractiveSession(graph=tf.Graph())
-        self.init_model()
-
-    def shutdown(self):
-        logging.info('Shutting down GPT.')
-        self.session.close()
+    @commands.command()
+    async def init(self, ctx):
+        self.not_ready = False
+        guilds = await self.bot.fetch_guilds(limit=150).flatten()
+        for guild in guilds:
+            self.guildIdList.append(guild.id)
+        self.serverSessions = {}
+        for serverid in self.guildIdList:
+            self.serverSessions[serverid] = gpt2_server_sessions(serverid)
+        await ctx.send("GPT-2 AI initialized")
 
     @commands.command()
     @commands.guild_only()
     async def talk(self, ctx, *, message):
         logging.info('MSG: ' + message)
-        if (self.is_inferencing):
+        if (self.is_interfering):
             await ctx.send('Currently talking to someone. Try again later.')
             return
-        
-        self.is_inferencing = True
-        context_tokens = self.enc.encode(message)
-        for _ in range(self.nsamples):
+        if (self.not_ready):
+            await ctx.send(self.not_ready_s)
+            return
+        server_id = ctx.message.guild.id
+        logging.info('Guild: ' + str(server_id))
+        self.is_interfering = True
+        context_tokens = self.serverSessions[server_id].enc.encode(message)
+        for _ in range(self.serverSessions[server_id].nsamples):
             async with ctx.typing():
                 start = time.time()
-                text_generator = functools.partial(self.generate_text, context_tokens)
+                text_generator = functools.partial(self.generate_text, server_id, context_tokens)
                 out = await self.bot.loop.run_in_executor(None, text_generator)
 
-                response = self.enc.decode(out[0])
+                response = self.serverSessions[server_id].enc.decode(out[0])
                 logging.info('RESPONSE GENERATED IN :' + str(round(time.time() - start, 2)) + ' seconds.')
                 logging.info('RESPONSE: ' + response)
                 logging.info('RESPONSE LEN: ' + str(len(response)))
@@ -109,28 +82,35 @@ class GPT2Bot(commands.Cog):
                 else:
                     await ctx.send(response)
 
-        self.is_inferencing = False
+        self.is_interfering = False
     
-    def generate_text(self, context_tokens):
-        return self.session.run(self.output, feed_dict={
-                    self.context: [context_tokens for _ in range(1)]
-                })[:, len(context_tokens):]
+    def generate_text(self, server_id, context_tokens):
+        return self.serverSessions[server_id].generate_text(context_tokens) #self.serverSessions[server_id].session.run(self.output, feed_dict={
+                #    self.context: [context_tokens for _ in range(1)]
+                #})[:, len(context_tokens):]
 
     @commands.command()
     @commands.guild_only()
     @commands.has_permissions(manage_messages=True)
     async def getconfig(self, ctx):
+        if (self.not_ready):
+            await ctx.send(self.not_ready_s)
+            return
         logging.info('Current state.')
-        await ctx.send('N Samples: ' + str(self.nsamples))
-        await ctx.send('Max Length: ' + str(self.length))
-        await ctx.send('Temperature: ' + str(self.temperature))
-        await ctx.send('Top K: ' + str(self.top_k))
-        await ctx.send('Model: ' + str(self.model_name))
+        server_id = ctx.message.guild.id
+        await ctx.send('N Samples: ' + str(self.serverSessions[server_id].nsamples))
+        await ctx.send('Max Length: ' + str(self.serverSessions[server_id].length))
+        await ctx.send('Temperature: ' + str(self.serverSessions[server_id].temperature))
+        await ctx.send('Top K: ' + str(self.serverSessions[server_id].top_k))
+        await ctx.send('Model: ' + str(self.serverSessions[server_id].model_name))
 
     @commands.command()
     @commands.guild_only()
     @commands.has_permissions(manage_messages=True)
     async def helpconfig(self, ctx):
+        if (self.not_ready):
+            await ctx.send(self.not_ready_s)
+            return
         logging.info('Help Invoked.')
         await ctx.send('Configure the bot session by `!setconfig <nsamples> <length> <temperature> <topk> <model: 117M or 345M>`.')
         await ctx.send('Get current state by `!getconfig`.')
@@ -139,22 +119,29 @@ class GPT2Bot(commands.Cog):
     @commands.guild_only()
     @commands.has_permissions(manage_messages=True)
     async def setconfig(self, ctx, nsamples: int, length: int, temp: float, top_k: int, model_name: str):
+        if (self.not_ready):
+            await ctx.send(self.not_ready_s)
+            return
         logging.info('Set configuration.')
-        if (self.is_inferencing):
+        if (self.is_interfering):
             await ctx.send('Currently talking to someone. Try again later.')
             return
+        if (self.not_ready):
+            await ctx.send(self.not_ready_s)
+            return
+        server_id = ctx.message.guild.id
 
         await ctx.trigger_typing()
         if int(nsamples) * int(length) <= self.sizeLimit:
-            self.shutdown()
-            self.set_state(int(nsamples), int(length), float(temp), int(top_k), model_name)
+            self.serverSessions[server_id].shutdown()
+            self.serverSessions[server_id].set_state(int(nsamples), int(length), float(temp), int(top_k), model_name)
             await ctx.trigger_typing()
-            self.preinit_model()
-            self.session = tf.InteractiveSession(graph=tf.Graph())
+            self.serverSessions[server_id].preinit_model()
+            self.serverSessions[server_id].session = tf.InteractiveSession(graph=tf.Graph())
             await ctx.trigger_typing()
-            self.init_model()
+            self.serverSessions[server_id].init_model()
             await ctx.send('Succesfully Set Configuration!')
-            if (self.nsamples * self.length > 100):
+            if (self.serverSessions[server_id].nsamples * self.serverSessions[server_id].length > 100):
                 await ctx.send('The configuration parameters are process intensive, responses may take a while.')
         else:
             await ctx.send('Configuration failed. The configuration parameters too process intensive.')
@@ -163,19 +150,26 @@ class GPT2Bot(commands.Cog):
     @commands.guild_only()
     @commands.has_permissions(manage_messages=True)
     async def default(self, ctx):
+        if (self.not_ready):
+            await ctx.send(self.not_ready_s)
+            return
         logging.info('Setting to Default configuration.')
-        if (self.is_inferencing):
+        if (self.is_interfering):
             await ctx.send('Currently talking to someone. Try again later.')
             return
+        if (self.not_ready):
+            await ctx.send(self.not_ready_s)
+            return
+        server_id = ctx.message.guild.id
 
         await ctx.trigger_typing()
-        self.shutdown()
-        self.init_state()
+        self.serverSessions[server_id].shutdown()
+        self.serverSessions[server_id].set_state(1,200,1,0,'117M')
         await ctx.trigger_typing()
-        self.preinit_model()
-        self.session = tf.InteractiveSession(graph=tf.Graph())
+        self.serverSessions[server_id].preinit_model()
+        self.serverSessions[server_id].session = tf.InteractiveSession(graph=tf.Graph())
         await ctx.trigger_typing()
-        self.init_model()
+        self.serverSessions[server_id].init_model()
 
         await ctx.send('Succesfully Set Default Configuration!')
 		
