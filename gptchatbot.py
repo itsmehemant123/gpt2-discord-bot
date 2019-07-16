@@ -11,6 +11,7 @@ import functools
 from datetime import datetime, timedelta
 from discord.ext import commands
 from discord import utils
+from discord.ext.commands import has_permissions, MissingPermissions
 from src import model, sample, encoder
 import numpy as np
 import tensorflow as tf
@@ -23,13 +24,14 @@ class GPT2Bot(commands.Cog):
         self.bot = bot
         self.reset_model()
         self.is_inferencing = False
+        self.sizeLimit=500
     
     def init_state(self):
         self.model_name='117M'
         self.batch_size = 1
         self.seed = 42069
         self.nsamples=1
-        self.length=10
+        self.length=200
         self.temperature=1
         self.top_k=0
     
@@ -37,7 +39,7 @@ class GPT2Bot(commands.Cog):
         self.nsamples = nsamples
         self.length = length
         self.temperature = temperature
-        self.top_k
+        self.top_k = top_k
         self.model_name = model_name
     
     def preinit_model(self):
@@ -116,6 +118,7 @@ class GPT2Bot(commands.Cog):
 
     @commands.command()
     @commands.guild_only()
+    @commands.has_permissions(manage_messages=True)
     async def getconfig(self, ctx):
         logging.info('Current state.')
         await ctx.send('N Samples: ' + str(self.nsamples))
@@ -126,6 +129,7 @@ class GPT2Bot(commands.Cog):
 
     @commands.command()
     @commands.guild_only()
+    @commands.has_permissions(manage_messages=True)
     async def helpconfig(self, ctx):
         logging.info('Help Invoked.')
         await ctx.send('Configure the bot session by `!setconfig <nsamples> <length> <temperature> <topk> <model: 117M or 345M>`.')
@@ -133,6 +137,7 @@ class GPT2Bot(commands.Cog):
 
     @commands.command()
     @commands.guild_only()
+    @commands.has_permissions(manage_messages=True)
     async def setconfig(self, ctx, nsamples: int, length: int, temp: float, top_k: int, model_name: str):
         logging.info('Set configuration.')
         if (self.is_inferencing):
@@ -140,20 +145,23 @@ class GPT2Bot(commands.Cog):
             return
 
         await ctx.trigger_typing()
-        self.shutdown()
-        self.set_state(int(nsamples), int(length), float(temp), int(top_k), model_name)
-        await ctx.trigger_typing()
-        self.preinit_model()
-        self.session = tf.InteractiveSession(graph=tf.Graph())
-        await ctx.trigger_typing()
-        self.init_model()
-
-        await ctx.send('Succesfully Set Configuration!')
-        if (self.nsamples * self.length > 100):
-            await ctx.send('The configuration parameters are process intensive, responses may take a while.')
+        if int(nsamples) * int(length) <= self.sizeLimit:
+            self.shutdown()
+            self.set_state(int(nsamples), int(length), float(temp), int(top_k), model_name)
+            await ctx.trigger_typing()
+            self.preinit_model()
+            self.session = tf.InteractiveSession(graph=tf.Graph())
+            await ctx.trigger_typing()
+            self.init_model()
+            await ctx.send('Succesfully Set Configuration!')
+            if (self.nsamples * self.length > 100):
+                await ctx.send('The configuration parameters are process intensive, responses may take a while.')
+        else:
+            await ctx.send('Configuration failed. The configuration parameters too process intensive.')
 
     @commands.command()
     @commands.guild_only()
+    @commands.has_permissions(manage_messages=True)
     async def default(self, ctx):
         logging.info('Setting to Default configuration.')
         if (self.is_inferencing):
@@ -170,7 +178,15 @@ class GPT2Bot(commands.Cog):
         self.init_model()
 
         await ctx.send('Succesfully Set Default Configuration!')
-    
+		
+    @default.error
+    @helpconfig.error
+    @setconfig.error
+    @getconfig.error
+    async def default_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            text = "Sorry {}, you do not have permissions to do that!".format(ctx.message.author)
+            await ctx.send(text)
         
 def setup(bot):
     bot.add_cog(GPT2Bot(bot))

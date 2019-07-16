@@ -25,7 +25,7 @@ if __name__ == '__main__':
 
 @bot.event
 async def on_ready():
-    await bot.change_presence(activity=discord.Game(name='Talking with people', type=0, url='https://github.com/itsmehemant123/gpt2-discord-bot'))
+    await bot.change_presence(activity=discord.Game(name='MayQuen Nyan²', type=0, url='https://github.com/KaitoCross/gpt2-discord-bot'))
     logging.info('Logged in as:{0} (ID: {0.id})'.format(bot.user))
 
 bot.run(auth['token'])
