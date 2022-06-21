@@ -8,7 +8,7 @@ discord.py == 1.0.0a1765+g5e65ec9
 # gptchatbot.py: 13
 # src/chatbot.py: 4
 # src/model.py: 1
-numpy == 1.14.2
+numpy == 1.22.0
 
 # src/encoder.py: 5
 regex == 2017.4.5
